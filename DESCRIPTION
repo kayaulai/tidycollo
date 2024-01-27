@@ -1,0 +1,19 @@
+Package: tidycollo
+Title: Co-occurence Statistics for Collocations and Collostructions from Tidy Data
+Version: 0.0.0.9000
+Authors@R: 
+    person("Ryan Ka Yau", "Lai", , "kayaulai@ucsb.edu", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0001-6478-0649"))
+Description: Takes in Tidy-formatted data of co-occurrence (or converts other formats to this Tidy format) and calculates co-occurrence measures.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.0
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Imports: 
+    dplyr,
+    glue,
+    rlang,
+    udpipe
