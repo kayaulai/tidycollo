@@ -29,6 +29,3 @@ A list. The first value, results, is usually all you want. You are also provided
 \description{
 Get common co-occurrence measures.
 }
-\examples{
-getMeasures(gum_v_o)
-}
