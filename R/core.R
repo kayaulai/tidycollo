@@ -42,7 +42,6 @@ getMeasures = function(data, lemma_names = c("lemma_1", "lemma_2"), slot_names =
 
   data_by_combo = data_by_combo %>% mutate(log_f = log(n))
 
-  print(colnames(data_by_combo))
   #Basic measures
   data_by_combo = getComponentf(data_by_combo, parse_expr(lemma_1), parse_expr(lemma_2), slot_1, slot_2)
   data_by_combo = getBasicPs(data_by_combo, slot_1, slot_2)
@@ -63,6 +62,7 @@ getMeasures = function(data, lemma_names = c("lemma_1", "lemma_2"), slot_names =
   #Dispersion
   if("disp" %in% measures) data_by_combo = getDispSimple(data_by_combo, data_by_combo_doc, parse_expr(doc_id), parse_expr(lemma_1), parse_expr(lemma_2))
 
+  View(data_by_combo)
   message("Done!")
   list(results = data_by_combo,
        counts_by_doc_combo = data_by_combo_doc,
@@ -83,7 +83,7 @@ getComponentf = function(df, lemma_1, lemma_2, slot_1, slot_2){
 }
 
 getBasicPs = function(df, slot_1, slot_2){
-  N = nrow(df)
+  N = sum(df$n)
   f_1 = parse_expr(glue("f_{slot_1}"))
   f_2 = parse_expr(glue("f_{slot_2}"))
   p_1_cond_2 = parse_expr(glue("p_{slot_1}_cond_{slot_2}"))
@@ -95,7 +95,7 @@ getBasicPs = function(df, slot_1, slot_2){
     mutate("p_{slot_1}_cond_{slot_2}" := (.data$n / !!f_1), #p(s1|s2)
            "p_{slot_2}_cond_{slot_1}" := (.data$n / !!f_2)) %>% #p(s2|s1)
     mutate("p_{slot_1}" := !!f_1 / N, #p(s1)
-           "p_{slot_2}" := !!f_1 / N) %>% #p(s2)
+           "p_{slot_2}" := !!f_2 / N) %>% #p(s2)
     mutate(p = n / N) %>% #p(s1, s2)
     mutate("p_{slot_1}_cond_not_{slot_2}" := ((!!f_1 - .data$n) / (N - !!f_2)), #p(s1|~s2)
            "p_{slot_2}_cond_not_{slot_1}" := ((!!f_2 - .data$n) / (N - !!f_1))) %>% #p(s3|~s1)
@@ -107,25 +107,18 @@ getBasicPs = function(df, slot_1, slot_2){
 
 
 getTableComps = function(df, slot_1, slot_2){
-  N = nrow(df)
+  N = sum(df$n)
   f_1 = parse_expr(glue("f_{slot_1}"))
   f_2 = parse_expr(glue("f_{slot_2}"))
+  p_1 = parse_expr(glue("p_{slot_1}"))
+  p_2 = parse_expr(glue("p_{slot_2}"))
 
   df %>%
     mutate("f_not_{slot_1}" := N - !!f_1,
            "f_not_{slot_2}" := N - !!f_2) %>%
     mutate("f_{slot_1}_not_{slot_2}" := !!f_1 - .data$n,
            "f_{slot_2}_not_{slot_1}" := !!f_2 - .data$n) %>%
-    mutate("f_not_{slot_1}_or_{slot_2}" := N - !!f_1 - !!f_2 + .data$n)
-}
-
-
-getTableComps = function(df, slot_1, slot_2){
-  N = nrow(df)
-  p_1 = parse_expr(glue("p_{slot_1}"))
-  p_2 = parse_expr(glue("p_{slot_2}"))
-
-  df %>%
+    mutate("f_not_{slot_1}_or_{slot_2}" := N - !!f_1 - !!f_2 + .data$n) %>%
     mutate(ef := N * !!p_1 * !!p_2,
            "ef_{slot_1}_not_{slot_2}" := N * !!p_1 * (1 - !!p_2),
            "ef_{slot_2}_not_{slot_1}" := N * !!p_2 * (1 - !!p_1)) %>%
@@ -133,7 +126,7 @@ getTableComps = function(df, slot_1, slot_2){
 }
 
 getBAMStr = function(df, slot_1, slot_2){
-  N = nrow(df)
+  N = sum(df$n)
   p_1 = parse_expr(glue("p_{slot_1}"))
   p_2 = parse_expr(glue("p_{slot_2}"))
   f_1_not_2 = parse_expr(glue("f_{slot_1}_not_{slot_2}"))
@@ -152,7 +145,7 @@ getBAMStr = function(df, slot_1, slot_2){
 
 
 getBAMTest = function(df, slot_1, slot_2){
-  N = nrow(df)
+  N = sum(df$n)
   p_1 = parse_expr(glue("p_{slot_1}"))
   p_2 = parse_expr(glue("p_{slot_2}"))
   f_1_not_2 = parse_expr(glue("f_{slot_1}_not_{slot_2}"))
@@ -188,7 +181,7 @@ getBAMTest = function(df, slot_1, slot_2){
 
 
 getUAMStr = function(df, slot_1, slot_2){
-  N = nrow(df)
+  N = sum(df$n)
   f_1 = parse_expr(glue("f_{slot_1}"))
   f_2 = parse_expr(glue("f_{slot_2}"))
   p_1_cond_2 = parse_expr(glue("p_{slot_1}_cond_{slot_2}"))
@@ -215,7 +208,7 @@ getUAMStr = function(df, slot_1, slot_2){
 
 
 getUAMRank = function(df, lemma_1, lemma_2, slot_1, slot_2, stats = c("chisq", "t", "gsq")){
-  N = nrow(df)
+  N = sum(df$n)
 
   for(stat in stats){
     df = df  %>%
@@ -245,7 +238,7 @@ getNormEntropyFromCounts = function(counts){
 }
 
 getProdSimple = function(df, lemma_1, lemma_2, slot_1, slot_2){
-  N = nrow(df)
+  N = sum(df$n)
 
   df %>%
     group_by(!!lemma_1) %>%
@@ -255,7 +248,7 @@ getProdSimple = function(df, lemma_1, lemma_2, slot_1, slot_2){
            "log_tf_{slot_2}" := log2(length(unique(!!lemma_2))),
            "p_hapax_cond_{slot_1}" := sum(n == 1)/ N) %>%
     ungroup() %>%
-    group_by(!!enexpr(lemma_2)) %>%
+    group_by(!!lemma_2) %>%
     mutate("h_{slot_2}_cond_{slot_1}" := getEntropyFromCounts(n),
            "h_{slot_2}_cond_{slot_1}_norm" := getNormEntropyFromCounts(n),
            "tf_{slot_2}" := length(unique(!!lemma_1)),
@@ -298,8 +291,8 @@ getDPCeiling = function(f, perc_docsize){
 zero.to.one = function (x) { (y = x - min(x))/max(y) }
 
 getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id){
-  curr_lemma_1 = pull(sub_df, !!enexpr(lemma_1))[1]
-  curr_lemma_2 = pull(sub_df, !!enexpr(lemma_2))[1]
+  curr_lemma_1 = pull(sub_df, !!lemma_1)[1]
+  curr_lemma_2 = pull(sub_df, !!lemma_2)[1]
   # print(glue("{curr_lemma_1} {curr_lemma_2}"))
 
   nd = length(docs_list) #no. of docs
@@ -358,13 +351,13 @@ getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_
              kld_disp = kld, kld_disp_norm = kld_norm,
              DP = DP, DP_norm = DP_norm, DP_nofreq = DP_nofreq,
              engvall_af = engvall_af)
-  names(result)[1:2] = c(deparse(enexpr(lemma_1)), deparse(enexpr(lemma_2)))
+  names(result)[1:2] = c(deparse(lemma_1), deparse(lemma_2))
   result
 }
 
 
 getDispSimple = function(df, df_bydoc, doc_id, lemma_1, lemma_2){
-  N = nrow(df)
+  N = sum(df$n)
 
   docs_list = unique(pull(df_bydoc, !!doc_id))
 
@@ -372,9 +365,10 @@ getDispSimple = function(df, df_bydoc, doc_id, lemma_1, lemma_2){
     group_by(!!doc_id) %>%
     count()
 
+  print("Hoo")
   result = df_bydoc %>%
     group_split(!!lemma_1, !!lemma_2) %>%
-    lapply(function(x) getDispFromDFPart(x, df_bydoc_totals, docs_list, !!enexpr(lemma_1), !!enexpr(lemma_2))) %>%
+    lapply(function(x) getDispFromDFPart(x, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id)) %>%
     bind_rows
 
   df = df %>% left_join(result, by = c(deparse(lemma_1), deparse(lemma_2)))

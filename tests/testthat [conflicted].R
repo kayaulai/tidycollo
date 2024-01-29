@@ -22,12 +22,13 @@ test_that("Extraction from CONLLU works", {
 
 
   getCombos = function(root, conllu_sent){
+    print(glue("{conllu_sent$doc_id[1]} -  {conllu_sent$paragraph_id[1]} - {conllu_sent$sentence[1]}"))
     root_kids = as.numeric(names(root$children))
     rootID = as.numeric(root$name)
     sfp = conllu_sent %>%
       filter(.data$head_token_id == rootID,
              .data$xpos == "p,助詞,句末,*",
-             .data$.data$token_id > rootID
+             .data$token_id > rootID
              ) %>% pull(lemma)
     adv_conj = conllu_sent %>%
       filter(
@@ -41,7 +42,10 @@ test_that("Extraction from CONLLU works", {
   comboList = lapply(conllu_sents, function(conllu_sent){
     conllu_sent_wtree = getTreeFromConllu(conllu_sent)
     combos = getCombos(conllu_sent_wtree$root, conllu_sent_wtree$df)
-    c(list(), combos)
+    c(list(docID = conllu_sent$doc_id[1],
+           paragraphID = conllu_sent$paragraph_id[1],
+           sentenceID = conllu_sent$sentence_id[1],
+           sentence = conllu_sent$sentence[1]), combos)
   })
 
   getCombos(conllu_sent_wtree$root, conllu_sent_wtree$df)
