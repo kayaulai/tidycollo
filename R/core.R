@@ -173,9 +173,9 @@ getBAMTest = function(df, slot_1, slot_2){
         log((!!p_2_cond_not_1) ^ ((!!f_2) - .data$n) * (1 - (!!p_2_cond_not_1)) ^ ((N - !!f_1) - ((!!f_2) - .data$n))) -
         log(.data$p ^ n * (1 - .data$p) ^ ((!!f_1) - .data$n)) -
         log(.data$p ^ ((!!f_2) - .data$n) * (1 - .data$p) ^ ((N - !!f_1) - ((!!f_2) - .data$n)))
-    )) %>%
+    ))   %>%
     mutate(p_fisher_yates =
-             sapply(1:N, function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE))$p.value)
+             sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE))$p.value)
 }
 
 
