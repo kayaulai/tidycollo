@@ -17,3 +17,5 @@ Imports:
     glue,
     rlang,
     udpipe
+URL: https://github.com/kayaulai/tidycollo
+BugReports: https://github.com/kayaulai/tidycollo/issues
