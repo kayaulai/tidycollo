@@ -4,6 +4,19 @@ getCombosFromUD = function(conllu, relation = expr(node() %any_down% node())){
 
 }
 
+
+# getRowsFromCombos = function(combos){
+#   n_sfp = length(combos$sfp)
+#   n_dc = length(combos$dc)
+#   if(n_sfp == 0) combos$sfp = NA
+#   if(n_dc == 0) combos$dc = NA
+#   expand_grid(sfp = combos$sfp, dc = combos$dc) %>%
+#     mutate(docID = combos$docID,
+#            paragraphID = combos$paragraphID,
+#            sentenceID = combos$sentenceID,
+#            sentence = combos$sentence)
+# }
+
 getTreeFromConllu = function(conllu){
   conllu = conllu %>% mutate(token_id = as.numeric(token_id), head_token_id = as.numeric(head_token_id))
   #Numeric because some corpora have decimal values
@@ -18,7 +31,7 @@ getTreeFromConllu = function(conllu){
   list(df = conllu, root = root, nodesList = nodesList)
 }
 
-getTidyInputFromComboList = function(conllu){
+getTidyInputFromComboList = function(comboList){
 
 }
 

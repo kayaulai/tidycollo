@@ -62,7 +62,6 @@ getMeasures = function(data, lemma_names = c("lemma_1", "lemma_2"), slot_names =
   #Dispersion
   if("disp" %in% measures) data_by_combo = getDispSimple(data_by_combo, data_by_combo_doc, parse_expr(doc_id), parse_expr(lemma_1), parse_expr(lemma_2))
 
-  View(data_by_combo)
   message("Done!")
   list(results = data_by_combo,
        counts_by_doc_combo = data_by_combo_doc,
@@ -137,9 +136,10 @@ getBAMStr = function(df, slot_1, slot_2){
 
   df %>%
     mutate(pmi = log2(.data$p / (!!p_1 * !!p_2)),
-           log_or = log((!!f_1_not_2 + .5) * (!!f_not_1_or_2 + .5) /
+           or = n * !!f_not_1_or_2 /
+                   (!!f_1_not_2 * !!f_2_not_1 + .5),
+           or = log((n + .5) * (!!f_not_1_or_2 + .5) /
                           ((!!f_1_not_2 + .5) * (!!f_2_not_1 + .5))),
-           mi = log2(.data$n / .data$ef),
            dice = 2 * .data$n / (!!f_1 + !!f_2))
 }
 
@@ -163,6 +163,8 @@ getBAMTest = function(df, slot_1, slot_2){
 
   df %>%
     mutate(res_pearson = (.data$n - .data$ef) / sqrt(.data$ef)) %>%
+    mutate(p_fisher_yates =
+             sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE)$p.value)) %>%
     mutate(chisq = .data$res_pearson^2 +
              (!!f_1_not_2 - !!ef_1_not_2)^2 / !!ef_1_not_2 +
              (!!f_2_not_1 - !!ef_2_not_1)^2 / !!ef_2_not_1 +
@@ -173,9 +175,7 @@ getBAMTest = function(df, slot_1, slot_2){
         log((!!p_2_cond_not_1) ^ ((!!f_2) - .data$n) * (1 - (!!p_2_cond_not_1)) ^ ((N - !!f_1) - ((!!f_2) - .data$n))) -
         log(.data$p ^ n * (1 - .data$p) ^ ((!!f_1) - .data$n)) -
         log(.data$p ^ ((!!f_2) - .data$n) * (1 - .data$p) ^ ((N - !!f_1) - ((!!f_2) - .data$n)))
-    ))   %>%
-    mutate(p_fisher_yates =
-             sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE))$p.value)
+    ))
 }
 
 
@@ -380,6 +380,24 @@ getCompMeasures = function(){
   #TODO:
   # LFMD (log-frequency biased mutual dependency): MD + log2(P(w1w2))
   # Lexical gravity
+}
+
+getBenjaminiYekutieli = function(pval, alpha = .05){
+  pval_arr = sort(pval)
+
+  getHarmonic = function(m){
+    result = 0
+    for(i in 1:m) result = result + 1/i
+    result
+  }
+  m = length(pval_arr)
+  cm = getHarmonic(m)
+  cv = 1:length(pval_arr) / (length(pval_arr) * cm) * alpha
+  reject = (cv > pval_arr)
+  MFDR = alpha * (m + 1) /  (2 * m * (log(m) + -digamma(1))+ 1)
+
+  result = list(cv = cv[rank(pval)], reject = reject[rank(pval)], MFDR = MFDR)
+  result
 }
 
 
