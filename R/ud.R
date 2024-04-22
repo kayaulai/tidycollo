@@ -5,6 +5,12 @@ getCombosFromUD = function(conllu, relation = expr(node() %any_down% node())){
 }
 
 
+tracePathInTree = function(nodeList, from, to){
+  nodeList[from]
+}
+
+
+
 # getRowsFromCombos = function(combos){
 #   n_sfp = length(combos$sfp)
 #   n_dc = length(combos$dc)

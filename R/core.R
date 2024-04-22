@@ -137,8 +137,8 @@ getBAMStr = function(df, slot_1, slot_2){
   df %>%
     mutate(pmi = log2(.data$p / (!!p_1 * !!p_2)),
            or = n * !!f_not_1_or_2 /
-                   (!!f_1_not_2 * !!f_2_not_1 + .5),
-           or = log((n + .5) * (!!f_not_1_or_2 + .5) /
+                   (!!f_1_not_2 * !!f_2_not_1),
+           lor = log((n + .5) * (!!f_not_1_or_2 + .5) /
                           ((!!f_1_not_2 + .5) * (!!f_2_not_1 + .5))),
            dice = 2 * .data$n / (!!f_1 + !!f_2))
 }
@@ -164,7 +164,9 @@ getBAMTest = function(df, slot_1, slot_2){
   df %>%
     mutate(res_pearson = (.data$n - .data$ef) / sqrt(.data$ef)) %>%
     mutate(p_fisher_yates =
-             sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE)$p.value)) %>%
+             sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE)$p.value))%>%
+    mutate(p_fisher_yates_attract =
+             sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE, alternative = "greater")$p.value)) %>%
     mutate(chisq = .data$res_pearson^2 +
              (!!f_1_not_2 - !!ef_1_not_2)^2 / !!ef_1_not_2 +
              (!!f_2_not_1 - !!ef_2_not_1)^2 / !!ef_2_not_1 +
