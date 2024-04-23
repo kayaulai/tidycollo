@@ -13,7 +13,8 @@ getMeasuresBoot = function(data,
                            R = 100,
                            resampleFunc = stratBoot,
                            quantiles = c(0, .025, .5, .975, 1),
-                           retainResamples = F){
+                           retainResamples = F,
+                           sampleRatio = 1){
   data = data %>%
     mutate(doc = as.factor(!!parse_expr(doc_id)))
   message("Performing on original data ...")
@@ -24,7 +25,7 @@ getMeasuresBoot = function(data,
   results = lapply(1:length(quantiles), function(x) resultTemplate)
 
   message("Now performing resampling and calculating measures ...")
-  measuresResampled = resampleFunc(data, doc_id, R, getMeasures, data, lemma_names, slot_names, doc_id, measures)
+  measuresResampled = resampleFunc(data, doc_id, R, getMeasures, sampleRatio, data, lemma_names, slot_names, doc_id, measures)
 
   percentiles_all = list()
   existPerc = numeric(nrow(orig$results))
@@ -71,14 +72,14 @@ getMeasuresBoot = function(data,
 
 
 
-stratBoot = function(data, doc_id, R, getMeasures, ...){
+stratBoot = function(data, doc_id, R, getMeasures, sampleRatio, ...){
   data_split = data %>%
     group_split(!!parse_expr(doc_id))
   docs = levels(data[[doc_id]])
 
   measuresResampled = list()
   measuresResampled = foreach(i=1:R, .combine='c') %do% {
-    data_new = data_split[ceiling(runif(length(docs), 0, length(docs)))] %>% bind_rows
+    data_new = data_split[ceiling(runif(round(length(docs) * sampleRatio), 0, length(docs)))] %>% bind_rows
     list(getMeasures(data_new, lemma_names, slot_names, doc_id, measures)$results)
   }
 
