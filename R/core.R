@@ -19,7 +19,10 @@
 #' @export
 #'
 #' @examples
-getMeasures = function(data, lemma_names = c("lemma_1", "lemma_2"), slot_names = c("f", "s"), doc_id = "doc", measures = list("bam_str", "bam_test", "uam_str", "uam_rank", "prod", "disp")){
+getMeasures = function(data,
+                       lemma_names = c("lemma_1", "lemma_2"),
+                       slot_names = c("f", "s"), doc_id = "doc",
+                       measures = list("bam_str", "bam_test", "uam_str", "uam_rank", "prod", "disp")){
 
   message("Some basic operations ...")
   #Basic info from input
@@ -137,8 +140,8 @@ getBAMStr = function(df, slot_1, slot_2){
 
   df %>%
     mutate(pmi = log2(.data$p / (!!p_1 * !!p_2)),
-           or = n * !!f_not_1_or_2 /
-                   (!!f_1_not_2 * !!f_2_not_1),
+           or = (as.numeric(n) / !!f_1_not_2) * (as.numeric(!!f_not_1_or_2) /
+                   !!f_2_not_1),
            lor = log((n + .5) * (!!f_not_1_or_2 + .5) /
                           ((!!f_1_not_2 + .5) * (!!f_2_not_1 + .5))),
            dice = 2 * .data$n / (!!f_1 + !!f_2))
