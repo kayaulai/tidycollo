@@ -51,6 +51,7 @@ getMeasures = function(data, lemma_names = c("lemma_1", "lemma_2"), slot_names =
   #Attraction
   if("bam_str" %in% measures) data_by_combo = getBAMStr(data_by_combo, slot_1, slot_2)
   if("bam_test" %in% measures) data_by_combo = getBAMTest(data_by_combo, slot_1, slot_2)
+  else if("bam_test_no_fisher" %in% measures) data_by_combo = getBAMTest(data_by_combo, slot_1, slot_2, skip.fisher = T)
   if("uam_str" %in% measures) data_by_combo = getUAMStr(data_by_combo, slot_1, slot_2)
   if("uam_rank" %in% measures) data_by_combo = getUAMRank(data_by_combo, parse_expr(lemma_1), parse_expr(lemma_2), slot_1, slot_2)
 
@@ -144,7 +145,7 @@ getBAMStr = function(df, slot_1, slot_2){
 }
 
 
-getBAMTest = function(df, slot_1, slot_2){
+getBAMTest = function(df, slot_1, slot_2, skip.fisher = F){
   N = sum(df$n)
   p_1 = parse_expr(glue("p_{slot_1}"))
   p_2 = parse_expr(glue("p_{slot_2}"))
@@ -161,12 +162,12 @@ getBAMTest = function(df, slot_1, slot_2){
   p_1_cond_not_2 = parse_expr(glue("p_{slot_1}_cond_not_{slot_2}"))
   p_2_cond_not_1 = parse_expr(glue("p_{slot_2}_cond_not_{slot_1}"))
 
-  df %>%
+  df = df %>%
     mutate(res_pearson = (.data$n - .data$ef) / sqrt(.data$ef)) %>%
-    mutate(p_fisher_yates =
-             sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE)$p.value))%>%
-    mutate(p_fisher_yates_attract =
-             sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE, alternative = "greater")$p.value)) %>%
+    # mutate(p_fisher_yates =
+    #          sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE)$p.value))%>%
+    # mutate(p_fisher_yates_attract =
+    #          sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE, alternative = "greater")$p.value)) %>%
     mutate(chisq = .data$res_pearson^2 +
              (!!f_1_not_2 - !!ef_1_not_2)^2 / !!ef_1_not_2 +
              (!!f_2_not_1 - !!ef_2_not_1)^2 / !!ef_2_not_1 +
@@ -178,6 +179,16 @@ getBAMTest = function(df, slot_1, slot_2){
         log(.data$p ^ n * (1 - .data$p) ^ ((!!f_1) - .data$n)) -
         log(.data$p ^ ((!!f_2) - .data$n) * (1 - .data$p) ^ ((N - !!f_1) - ((!!f_2) - .data$n)))
     ))
+
+  if(!skip.fisher){
+    df = df %>%
+      mutate(p_fisher_yates =
+               sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE)$p.value))%>%
+      mutate(p_fisher_yates_attract =
+               sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE, alternative = "greater")$p.value))
+  }
+
+  df
 }
 
 
@@ -281,18 +292,29 @@ getDPFloor = function(f, perc_docsize){
   sum(abs(percs_perdoc - perc_docsize)) / 2
 }
 
-
-getDPCeiling = function(f, perc_docsize){
-  smallestDoc = which(perc_docsize == min(perc_docsize))[1]
-  perc_bydoc_currcombo = rep(0, length(perc_docsize))
-  perc_bydoc_currcombo[smallestDoc] = 1
-  sum(abs(perc_docsize - smallestDoc)) / 2
+getDPCeiling = function(f, perc_docsize, abs_docsize){
+  abs_bydoc_currcombo = rep(0, length(perc_docsize))
+  assignedN = 0
+  i = 1
+  #This is slightly modified from Gries' method to account for very small docs.
+  #We 'fill' the smallest doc first. Once that's filled, we go to the next smallest
+  #doc, and so on.
+  while(assignedN < f){
+    smallestDocID = which(rank(perc_docsize, ties.method = "first") == i)
+    toAssign = min(abs_docsize[smallestDocID])
+    abs_bydoc_currcombo[smallestDocID] = toAssign
+    assignedN = assignedN + toAssign
+    i = i + 1
+  }
+  perc_bydoc_currcombo = abs_bydoc_currcombo / sum(abs_bydoc_currcombo)
+  sum(abs(perc_docsize - perc_bydoc_currcombo)) / 2
 }
 
 #Taken directly from Gries (2022)
 zero.to.one = function (x) { (y = x - min(x))/max(y) }
 
 getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id){
+  print(sub_df)
   curr_lemma_1 = pull(sub_df, !!lemma_1)[1]
   curr_lemma_2 = pull(sub_df, !!lemma_2)[1]
   # print(glue("{curr_lemma_1} {curr_lemma_2}"))
@@ -332,7 +354,8 @@ getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_
   DC = ((sum(sqrt(freqs_bydoc)))/nd)^2
   DP = sum(abs(perc_docsize - perc_bydoc_currcombo)) / 2
   DP_norm = DP / (1 - 1 / nd)
-  DP_nofreq = zero.to.one(c(getDPFloor(f, perc_docsize), getDPCeiling(f, perc_docsize), DP))[3]
+  DP_nofreq = zero.to.one(c(getDPFloor(f, perc_docsize),
+                            getDPCeiling(f, perc_docsize, total_bydoc), DP))[3]
   kld = sum(perc_bydoc_currcombo * log2(perc_bydoc_currcombo / perc_docsize))
   if(is.na(kld)) kld = Inf
   kld_norm = 1 - exp(-kld)
@@ -367,11 +390,20 @@ getDispSimple = function(df, df_bydoc, doc_id, lemma_1, lemma_2){
     group_by(!!doc_id) %>%
     count()
 
-  print("Hoo")
-  result = df_bydoc %>%
-    group_split(!!lemma_1, !!lemma_2) %>%
-    lapply(function(x) getDispFromDFPart(x, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id)) %>%
+  message(">>Splitting data frame for dispersion calculation ...")
+  df_bydoc_split = df_bydoc %>%
+    group_split(!!lemma_1, !!lemma_2)
+  message(">>Starting dispersion calculation...")
+  pb = txtProgressBar(max = length(df_bydoc_split))
+  result = lapply(1:length(df_bydoc_split), function(i){
+    setTxtProgressBar(pb, i)
+    x = df_bydoc_split[[i]]
+    getDispFromDFPart(x, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id)
+  }) %>%
     bind_rows
+  close(pb)
+
+#function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id){
 
   df = df %>% left_join(result, by = c(deparse(lemma_1), deparse(lemma_2)))
   df

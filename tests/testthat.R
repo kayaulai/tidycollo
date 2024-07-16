@@ -47,3 +47,13 @@ test_that("Extraction from CONLLU works", {
   getCombos(conllu_sent_wtree$root, conllu_sent_wtree$df)
 
 })
+
+test_that("DP works",{
+  library(tidyr)
+  data = tibble(doc = c(rep("A", 1), rep("B", 2), rep("C", 3), rep("D", 4)),
+                         x_lemma = c("p", "p", "q", "p", "q", "r", "p", "q", "r", "q"),
+                         y_lemma = c("z", "y", "z", "y", "z", "z", "y", "z", "z", "y"))
+  getMeasures(data, lemma_names = c("x_lemma", "y_lemma"), slot_names = c("x", "y"),
+              doc_id = "doc")
+
+})
