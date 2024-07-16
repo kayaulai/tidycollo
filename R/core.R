@@ -317,7 +317,6 @@ getDPCeiling = function(f, perc_docsize, abs_docsize){
 zero.to.one = function (x) { (y = x - min(x))/max(y) }
 
 getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id){
-  print(sub_df)
   curr_lemma_1 = pull(sub_df, !!lemma_1)[1]
   curr_lemma_2 = pull(sub_df, !!lemma_2)[1]
   # print(glue("{curr_lemma_1} {curr_lemma_2}"))
