@@ -95,8 +95,8 @@ getBasicPs = function(df, slot_1, slot_2){
   p_2_cond_not_1 = parse_expr(glue("p_{slot_2}_cond_not_{slot_1}"))
 
   df %>%
-    mutate("p_{slot_1}_cond_{slot_2}" := (.data$n / !!f_1), #p(s1|s2)
-           "p_{slot_2}_cond_{slot_1}" := (.data$n / !!f_2)) %>% #p(s2|s1)
+    mutate("p_{slot_1}_cond_{slot_2}" := (.data$n / !!f_2), #p(s1|s2)
+           "p_{slot_2}_cond_{slot_1}" := (.data$n / !!f_1)) %>% #p(s2|s1)
     mutate("p_{slot_1}" := !!f_1 / N, #p(s1)
            "p_{slot_2}" := !!f_2 / N) %>% #p(s2)
     mutate(p = n / N) %>% #p(s1, s2)
