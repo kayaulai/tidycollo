@@ -200,6 +200,8 @@ getUAMStr = function(df, slot_1, slot_2){
   N = sum(df$n)
   f_1 = parse_expr(glue("f_{slot_1}"))
   f_2 = parse_expr(glue("f_{slot_2}"))
+  p_1 = parse_expr(glue("p_{slot_1}"))
+  p_2 = parse_expr(glue("p_{slot_2}"))
   p_1_cond_2 = parse_expr(glue("p_{slot_1}_cond_{slot_2}"))
   p_2_cond_1 = parse_expr(glue("p_{slot_2}_cond_{slot_1}"))
   p_1_cond_not_2 = parse_expr(glue("p_{slot_1}_cond_not_{slot_2}"))
@@ -213,12 +215,12 @@ getUAMStr = function(df, slot_1, slot_2){
            "surp_{slot_2}" := -log2(n / !!f_2)) %>%
     mutate("Dp_{slot_1}_on_{slot_2}" := !!p_1_cond_2 - !!p_1_cond_not_2,
            "Dp_{slot_2}_on_{slot_1}" := !!p_2_cond_1 - !!p_2_cond_not_1) %>%
-    mutate("kld_{slot_1}_cond_{slot_2}" := .data$p * log2(.data$p / !!p_1_cond_2) +
-             (1 - .data$p) * log2((1 - .data$p) * (1 - !!p_1_cond_2)),
-           "kld_{slot_2}_cond_{slot_1}" := .data$p * log2(.data$p / !!p_2_cond_1) +
-             (1 - .data$p) * log2((1 - .data$p) * (1 - !!p_2_cond_1))) %>%
-    mutate("kld_norm_{slot_1}_cond_{slot_2}" := 1 - exp(!!kld_1_cond_2),
-           "kld_norm_{slot_2}_cond_{slot_1}" := 1 - exp(!!kld_2_cond_1))
+    mutate("kld_{slot_1}_cond_{slot_2}" := !!p_1_cond_2 * log2(!!p_1_cond_2 / !!p_1) +
+             (1 - !!p_1_cond_2) * log2((1 - !!p_1_cond_2) * (1 - !!p_1)),
+           "kld_{slot_2}_cond_{slot_1}" := !!p_2_cond_1 * log2(!!p_2_cond_1 / !!p_2) +
+             (1 - !!p_2_cond_1) * log2((1 - !!p_2_cond_1) * (1 - !!p_2))) %>%
+    mutate("kld_norm_{slot_1}_cond_{slot_2}" := 1 - exp(-!!kld_1_cond_2),
+           "kld_norm_{slot_2}_cond_{slot_1}" := 1 - exp(-!!kld_2_cond_1))
 }
 
 
@@ -316,7 +318,8 @@ getDPCeiling = function(f, perc_docsize, abs_docsize){
 #Taken directly from Gries (2022)
 zero.to.one = function (x) { (y = x - min(x))/max(y) }
 
-getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id){
+getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id,
+                             floor, ceil){
   curr_lemma_1 = pull(sub_df, !!lemma_1)[1]
   curr_lemma_2 = pull(sub_df, !!lemma_2)[1]
   # print(glue("{curr_lemma_1} {curr_lemma_2}"))
@@ -356,8 +359,7 @@ getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_
   DC = ((sum(sqrt(freqs_bydoc)))/nd)^2
   DP = sum(abs(perc_docsize - perc_bydoc_currcombo)) / 2
   DP_norm = DP / (1 - 1 / nd)
-  DP_nofreq = zero.to.one(c(getDPFloor(f, perc_docsize),
-                            getDPCeiling(f, perc_docsize, total_bydoc), DP))[3]
+  DP_nofreq = zero.to.one(c(floor, ceil, DP))[3]
   kld = sum(perc_bydoc_currcombo * log2(perc_bydoc_currcombo / perc_docsize))
   if(is.na(kld)) kld = Inf
   kld_norm = 1 - exp(-kld)
@@ -395,12 +397,21 @@ getDispSimple = function(df, df_bydoc, doc_id, lemma_1, lemma_2){
   message(">>Splitting data frame for dispersion calculation ...")
   df_bydoc_split = df_bydoc %>%
     group_split(!!lemma_1, !!lemma_2)
+
+  total_bydoc = df_bydoc_totals$n
+  names(total_bydoc) = pull(df_bydoc_totals, !!doc_id)
+  perc_docsize = total_bydoc / sum(total_bydoc)
+  freq_types = unique(df$n)
+  dpCeils = sapply(freq_types, function(x) getDPCeiling(x, perc_docsize, total_bydoc))
+  dpFloors = sapply(freq_types, function(x) getDPFloor(x, perc_docsize))
+
   message(">>Starting dispersion calculation...")
   pb = txtProgressBar(max = length(df_bydoc_split))
   result = lapply(1:length(df_bydoc_split), function(i){
     setTxtProgressBar(pb, i)
     x = df_bydoc_split[[i]]
-    getDispFromDFPart(x, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id)
+    getDispFromDFPart(x, df_bydoc_totals, docs_list, lemma_1, lemma_2,
+                      doc_id, dpCeils[freq_types == sum(x$n)], dpFloors[freq_types == sum(x$n)])
   }) %>%
     bind_rows
   close(pb)
