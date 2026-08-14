@@ -216,9 +216,9 @@ getUAMStr = function(df, slot_1, slot_2){
     mutate("Dp_{slot_1}_on_{slot_2}" := !!p_1_cond_2 - !!p_1_cond_not_2,
            "Dp_{slot_2}_on_{slot_1}" := !!p_2_cond_1 - !!p_2_cond_not_1) %>%
     mutate("kld_{slot_1}_cond_{slot_2}" := !!p_1_cond_2 * log2(!!p_1_cond_2 / !!p_1) +
-             (1 - !!p_1_cond_2) * log2((1 - !!p_1_cond_2) * (1 - !!p_1)),
+             (1 - !!p_1_cond_2) * log2((1 - !!p_1_cond_2) / (1 - !!p_1)),
            "kld_{slot_2}_cond_{slot_1}" := !!p_2_cond_1 * log2(!!p_2_cond_1 / !!p_2) +
-             (1 - !!p_2_cond_1) * log2((1 - !!p_2_cond_1) * (1 - !!p_2))) %>%
+             (1 - !!p_2_cond_1) * log2((1 - !!p_2_cond_1) / (1 - !!p_2))) %>%
     mutate("kld_norm_{slot_1}_cond_{slot_2}" := 1 - exp(-!!kld_1_cond_2),
            "kld_norm_{slot_2}_cond_{slot_1}" := 1 - exp(-!!kld_2_cond_1))
 }
