@@ -1,6 +1,12 @@
 .Rproj.user
 .Rhistory
+.RData
 .Rdata
 .httr-oauth
 .DS_Store
 .quarto
+
+# Local research data (not part of the package)
+/20240422_resample.RData
+/owpl.Rdata
+/selectedDF_exp2.05_exp3_comparison_0.05.csv

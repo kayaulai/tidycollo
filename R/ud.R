@@ -33,7 +33,7 @@ getTreeFromConllu = function(conllu){
   root = Node$new(currTokenID, lemma = currTokenLemma)
   getDescendentsInConllu(conllu, currTokenID, root)
   nodesList = Traverse(root)
-  nodesList = nodesList[sapply(nodesList, function(x) as.numeric(x$name))]
+  nodesList = nodesList[order(sapply(nodesList, function(x) as.numeric(x$name)))]
   list(df = conllu, root = root, nodesList = nodesList)
 }
 
@@ -44,7 +44,7 @@ getTidyInputFromComboList = function(comboList){
 getDescendentsInConllu = function(conllu, currTokenID, currNode){
   children = conllu %>% filter(.data$head_token_id == currTokenID) %>% pull(.data$token_id)
   for(currTokenID in children){
-    currTokenLemma = (conllu %>% filter(head_token_id == 0) %>% pull(.data$lemma))[1]
+    currTokenLemma = (conllu %>% filter(.data$token_id == currTokenID) %>% pull(.data$lemma))[1]
     nextNode = currNode$AddChild(currTokenID, lemma = currTokenLemma)
     getDescendentsInConllu(conllu, currTokenID, nextNode)
   }

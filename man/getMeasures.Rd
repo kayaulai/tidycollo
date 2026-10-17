@@ -29,3 +29,11 @@ A list. The first value, results, is usually all you want. You are also provided
 \description{
 Get common co-occurrence measures.
 }
+\examples{
+data = dplyr::tibble(doc = c("A", "B", "B", "C", "C", "C"),
+                     x_lemma = c("p", "p", "q", "p", "q", "r"),
+                     y_lemma = c("z", "y", "z", "y", "z", "z"))
+res = getMeasures(data, lemma_names = c("x_lemma", "y_lemma"),
+                  slot_names = c("x", "y"), doc_id = "doc")
+res$results
+}

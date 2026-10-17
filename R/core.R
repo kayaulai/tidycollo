@@ -10,15 +10,15 @@
 #' @param measures A list of abbreviations. See Notes below. If you just want the basic measures of each type (frequency, attraction, productivity, dispersion) and don't plan to use fancier meaures (e.g. based on LNRE models) or composite (e.g. lexical gravity), the default should work fine. #TODO: actually write the list,.
 #'
 #' @return A list. The first value, results, is usually all you want. You are also provided with several other views of the original data, including a list of combinations with frequencies by document, a term-document matrix, and a contingency table.
-#' @import dplyr
-#' @import glue
-#' @import rlang
-#' @importFrom stats fisher.test
-#' @importFrom stats rmultinom
-#' @importFrom stats sd
 #' @export
 #'
 #' @examples
+#' data = dplyr::tibble(doc = c("A", "B", "B", "C", "C", "C"),
+#'                      x_lemma = c("p", "p", "q", "p", "q", "r"),
+#'                      y_lemma = c("z", "y", "z", "y", "z", "z"))
+#' res = getMeasures(data, lemma_names = c("x_lemma", "y_lemma"),
+#'                   slot_names = c("x", "y"), doc_id = "doc")
+#' res$results
 getMeasures = function(data,
                        lemma_names = c("lemma_1", "lemma_2"),
                        slot_names = c("f", "s"), doc_id = "doc",
@@ -101,10 +101,10 @@ getBasicPs = function(df, slot_1, slot_2){
            "p_{slot_2}" := !!f_2 / N) %>% #p(s2)
     mutate(p = n / N) %>% #p(s1, s2)
     mutate("p_{slot_1}_cond_not_{slot_2}" := ((!!f_1 - .data$n) / (N - !!f_2)), #p(s1|~s2)
-           "p_{slot_2}_cond_not_{slot_1}" := ((!!f_2 - .data$n) / (N - !!f_1))) %>% #p(s3|~s1)
+           "p_{slot_2}_cond_not_{slot_1}" := ((!!f_2 - .data$n) / (N - !!f_1))) %>% #p(s2|~s1)
     mutate("p_not_{slot_1}_cond_{slot_2}" := 1 - !!p_1_cond_2, #p(~s1|s2)
            "p_not_{slot_2}_cond_{slot_1}" := 1 - !!p_2_cond_1) %>% #p(~s2|s1)
-    mutate("p_not_{slot_1}_cond_not_{slot_2}" := 1 - !!p_1_cond_not_2, #p(~s1|s2)
+    mutate("p_not_{slot_1}_cond_not_{slot_2}" := 1 - !!p_1_cond_not_2, #p(~s1|~s2)
            "p_not_{slot_2}_cond_not_{slot_1}" := 1 - !!p_2_cond_not_1) #p(~s2|~s1)
 }
 
@@ -176,12 +176,11 @@ getBAMTest = function(df, slot_1, slot_2, skip.fisher = F){
              (!!f_2_not_1 - !!ef_2_not_1)^2 / !!ef_2_not_1 +
              (!!f_not_1_or_2 - !!ef_not_1_or_2)^2 / !!ef_not_1_or_2)  %>%
     mutate(t = (.data$n - .data$ef) / sqrt(.data$n))%>%
-    mutate(gsq = 2 *(
-      log((!!p_2_cond_1) ^ .data$n * (1 - !!p_2_cond_1) ^ ((!!f_1) - .data$n)) +
-        log((!!p_2_cond_not_1) ^ ((!!f_2) - .data$n) * (1 - (!!p_2_cond_not_1)) ^ ((N - !!f_1) - ((!!f_2) - .data$n))) -
-        log(.data$p ^ n * (1 - .data$p) ^ ((!!f_1) - .data$n)) -
-        log(.data$p ^ ((!!f_2) - .data$n) * (1 - .data$p) ^ ((N - !!f_1) - ((!!f_2) - .data$n)))
-    ))
+    #G^2 = 2 * sum(O * log(O / E)) over the four cells, with 0 * log(0) = 0
+    mutate(gsq = 2 * (xLogXOverY(.data$n, .data$ef) +
+                        xLogXOverY(!!f_1_not_2, !!ef_1_not_2) +
+                        xLogXOverY(!!f_2_not_1, !!ef_2_not_1) +
+                        xLogXOverY(!!f_not_1_or_2, !!ef_not_1_or_2)))
 
   if(!skip.fisher){
     df = df %>%
@@ -195,6 +194,11 @@ getBAMTest = function(df, slot_1, slot_2, skip.fisher = F){
 }
 
 
+
+#x * log(x / y), taking 0 * log(0) = 0
+xLogXOverY = function(x, y, base = exp(1)){
+  ifelse(x == 0, 0, x * log(x / y, base))
+}
 
 getUAMStr = function(df, slot_1, slot_2){
   N = sum(df$n)
@@ -211,14 +215,14 @@ getUAMStr = function(df, slot_1, slot_2){
 
 
   df %>%
-    mutate("surp_{slot_1}" := -log2(n / !!f_1),
-           "surp_{slot_2}" := -log2(n / !!f_2)) %>%
+    mutate("surp_{slot_1}" := -log2(n / !!f_2), #-log2 p(s1|s2)
+           "surp_{slot_2}" := -log2(n / !!f_1)) %>% #-log2 p(s2|s1)
     mutate("Dp_{slot_1}_on_{slot_2}" := !!p_1_cond_2 - !!p_1_cond_not_2,
            "Dp_{slot_2}_on_{slot_1}" := !!p_2_cond_1 - !!p_2_cond_not_1) %>%
-    mutate("kld_{slot_1}_cond_{slot_2}" := !!p_1_cond_2 * log2(!!p_1_cond_2 / !!p_1) +
-             (1 - !!p_1_cond_2) * log2((1 - !!p_1_cond_2) / (1 - !!p_1)),
-           "kld_{slot_2}_cond_{slot_1}" := !!p_2_cond_1 * log2(!!p_2_cond_1 / !!p_2) +
-             (1 - !!p_2_cond_1) * log2((1 - !!p_2_cond_1) / (1 - !!p_2))) %>%
+    mutate("kld_{slot_1}_cond_{slot_2}" := xLogXOverY(!!p_1_cond_2, !!p_1, 2) +
+             xLogXOverY(1 - !!p_1_cond_2, 1 - !!p_1, 2),
+           "kld_{slot_2}_cond_{slot_1}" := xLogXOverY(!!p_2_cond_1, !!p_2, 2) +
+             xLogXOverY(1 - !!p_2_cond_1, 1 - !!p_2, 2)) %>%
     mutate("kld_norm_{slot_1}_cond_{slot_2}" := 1 - exp(-!!kld_1_cond_2),
            "kld_norm_{slot_2}_cond_{slot_1}" := 1 - exp(-!!kld_2_cond_1))
 }
@@ -263,15 +267,15 @@ getProdSimple = function(df, lemma_1, lemma_2, slot_1, slot_2){
     mutate("h_{slot_1}_cond_{slot_2}" := getEntropyFromCounts(n),
            "h_{slot_1}_cond_{slot_2}_norm" := getNormEntropyFromCounts(n),
            "tf_{slot_1}" := length(unique(!!lemma_2)),
-           "log_tf_{slot_2}" := log2(length(unique(!!lemma_2))),
-           "p_hapax_cond_{slot_1}" := sum(n == 1)/ N) %>%
+           "log_tf_{slot_1}" := log2(length(unique(!!lemma_2))),
+           "p_hapax_cond_{slot_1}" := sum(n == 1)/ sum(n)) %>% #Baayen's P
     ungroup() %>%
     group_by(!!lemma_2) %>%
     mutate("h_{slot_2}_cond_{slot_1}" := getEntropyFromCounts(n),
            "h_{slot_2}_cond_{slot_1}_norm" := getNormEntropyFromCounts(n),
            "tf_{slot_2}" := length(unique(!!lemma_1)),
-           "log_tf_{slot_1}" := log2(length(unique(!!lemma_1))),
-           "p_hapax_cond_{slot_2}" := sum(n == 1)/ N) %>%
+           "log_tf_{slot_2}" := log2(length(unique(!!lemma_1))),
+           "p_hapax_cond_{slot_2}" := sum(n == 1)/ sum(n)) %>% #Baayen's P
     ungroup()
 
 }
@@ -282,18 +286,18 @@ getDPFloor_s2 = function(f, perc_docsize){
 }
 
 #Strategy 3
+#Largest-remainder (Hamilton) apportionment of f tokens to docs in proportion to
+#doc size. This minimises sum(abs(freqs - f * perc_docsize)), and hence DP, over
+#all integer allocations.
 getDPFloor = function(f, perc_docsize){
-  freqs_perdoc = numeric(length(perc_docsize))
-  percs_perdoc = numeric(length(perc_docsize))
-  for(i in 1:f){
-    # print(freqs_perdoc)
-    # print(perc_docsize - percs_perdoc)
-    devs = perc_docsize - percs_perdoc
-    next_doc = which(devs == max(devs))[1]
-    freqs_perdoc[next_doc] = freqs_perdoc[next_doc] + 1
-    percs_perdoc = freqs_perdoc / sum(freqs_perdoc)
+  quotas = f * perc_docsize
+  freqs_perdoc = floor(quotas)
+  remainder = round(f - sum(freqs_perdoc))
+  if(remainder > 0){
+    top = order(quotas - freqs_perdoc, decreasing = TRUE)[1:remainder]
+    freqs_perdoc[top] = freqs_perdoc[top] + 1
   }
-  percs_perdoc = freqs_perdoc / sum(freqs_perdoc)
+  percs_perdoc = freqs_perdoc / f
   sum(abs(percs_perdoc - perc_docsize)) / 2
 }
 
@@ -306,7 +310,7 @@ getDPCeiling = function(f, perc_docsize, abs_docsize){
   #doc, and so on.
   while(assignedN < f){
     smallestDocID = which(rank(perc_docsize, ties.method = "first") == i)
-    toAssign = min(abs_docsize[smallestDocID])
+    toAssign = min(abs_docsize[smallestDocID], f - assignedN)
     abs_bydoc_currcombo[smallestDocID] = toAssign
     assignedN = assignedN + toAssign
     i = i + 1
@@ -352,36 +356,34 @@ getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_
   var_coef_perc = sd_perc / mean(perc_bydoc_allcombos)
   juilland_d = 1 - var_coef_count / sqrt(nd - 1)
   juilland_d_perc = 1 - var_coef_perc / sqrt(nd - 1)
-  rosengren_s = (sum(sqrt(freqs_bydoc))) ^ 2 / (nd * f)
+  rosengren_s = (sum(sqrt(perc_docsize * freqs_bydoc))) ^ 2 / f #Unequal-parts version
   D2 = (log2(f) - sum(freqs_bydoc * log2(freqs_bydoc), na.rm = T) / f) / log2(nd)
   chisq = sum((freqs_bydoc - efreq_bydoc)^2 / efreq_bydoc)
   D3 = 1 - chisq / (4 * f)
-  DC = ((sum(sqrt(freqs_bydoc)))/nd)^2
+  DC = ((sum(sqrt(freqs_bydoc)))/nd)^2 / (f / nd)
   DP = sum(abs(perc_docsize - perc_bydoc_currcombo)) / 2
-  DP_norm = DP / (1 - 1 / nd)
+  DP_norm = DP / (1 - min(perc_docsize))
   DP_nofreq = zero.to.one(c(floor, ceil, DP))[3]
-  kld = sum(perc_bydoc_currcombo * log2(perc_bydoc_currcombo / perc_docsize))
-  if(is.na(kld)) kld = Inf
+  kld = sum(xLogXOverY(perc_bydoc_currcombo, perc_docsize, 2))
   kld_norm = 1 - exp(-kld)
 
   #Adj. freqs
   juilland_u = juilland_d * f
-  rosengren_af = rosengren_s * f / nd
+  rosengren_af = rosengren_s * f
   Um = (sum(freqs_bydoc)) * D2 + (1 - D2) * f / nd
   engvall_af = f * range
 
-  result = c(curr_lemma_1, curr_lemma_2, range = range, sd = sd_count, var_coef = var_coef_count,
-             sd_perc = sd_perc, var_coef_perc = var_coef_perc,
-             idf = idf,
-             juilland_d = juilland_d, juilland_d_perc = juilland_d_perc, juilland_u = juilland_u,
-             D2 = D2, Um = Um, D3 = D3,
-             rosengren_s = rosengren_s, rosengren_af = rosengren_af,
-             chisq_disp = chisq, DC = DC,
-             kld_disp = kld, kld_disp_norm = kld_norm,
-             DP = DP, DP_norm = DP_norm, DP_nofreq = DP_nofreq,
-             engvall_af = engvall_af)
-  names(result)[1:2] = c(deparse(lemma_1), deparse(lemma_2))
-  result
+  tibble(!!deparse(lemma_1) := curr_lemma_1, !!deparse(lemma_2) := curr_lemma_2,
+         range = range, sd = sd_count, var_coef = var_coef_count,
+         sd_perc = sd_perc, var_coef_perc = var_coef_perc,
+         idf = idf,
+         juilland_d = juilland_d, juilland_d_perc = juilland_d_perc, juilland_u = juilland_u,
+         D2 = D2, Um = Um, D3 = D3,
+         rosengren_s = rosengren_s, rosengren_af = rosengren_af,
+         chisq_disp = chisq, DC = DC,
+         kld_disp = kld, kld_disp_norm = kld_norm,
+         DP = DP, DP_norm = DP_norm, DP_nofreq = DP_nofreq,
+         engvall_af = engvall_af)
 }
 
 
@@ -390,9 +392,11 @@ getDispSimple = function(df, df_bydoc, doc_id, lemma_1, lemma_2){
 
   docs_list = unique(pull(df_bydoc, !!doc_id))
 
+  #Token counts per doc (df_bydoc has one row per combo per doc)
   df_bydoc_totals = df_bydoc %>%
     group_by(!!doc_id) %>%
-    count()
+    summarise(n = sum(n)) %>%
+    ungroup
 
   message(">>Splitting data frame for dispersion calculation ...")
   df_bydoc_split = df_bydoc %>%
@@ -410,8 +414,9 @@ getDispSimple = function(df, df_bydoc, doc_id, lemma_1, lemma_2){
   result = lapply(1:length(df_bydoc_split), function(i){
     setTxtProgressBar(pb, i)
     x = df_bydoc_split[[i]]
-    getDispFromDFPart(x, df_bydoc_totals, docs_list, lemma_1, lemma_2,
-                      doc_id, dpCeils[freq_types == sum(x$n)], dpFloors[freq_types == sum(x$n)])
+    getDispFromDFPart(x, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id,
+                      floor = dpFloors[freq_types == sum(x$n)],
+                      ceil = dpCeils[freq_types == sum(x$n)])
   }) %>%
     bind_rows
   close(pb)
@@ -430,7 +435,8 @@ getCompMeasures = function(){
 }
 
 getBenjaminiYekutieli = function(pval, alpha = .05){
-  pval_arr = sort(pval)
+  pval_order = order(pval)
+  pval_arr = pval[pval_order]
 
   getHarmonic = function(m){
     result = 0
@@ -440,10 +446,16 @@ getBenjaminiYekutieli = function(pval, alpha = .05){
   m = length(pval_arr)
   cm = getHarmonic(m)
   cv = 1:length(pval_arr) / (length(pval_arr) * cm) * alpha
-  reject = (cv > pval_arr)
+  #Step-up: reject the k smallest p-values, where k is the largest i with p_(i) <= cv_i
+  k = max(c(0, which(pval_arr <= cv)))
+  reject = seq_len(m) <= k
   MFDR = alpha * (m + 1) /  (2 * m * (log(m) + -digamma(1))+ 1)
 
-  result = list(cv = cv[rank(pval)], reject = reject[rank(pval)], MFDR = MFDR)
+  cv_orig = numeric(m)
+  reject_orig = logical(m)
+  cv_orig[pval_order] = cv
+  reject_orig[pval_order] = reject
+  result = list(cv = cv_orig, reject = reject_orig, MFDR = MFDR)
   result
 }
 
