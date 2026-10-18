@@ -2,6 +2,7 @@
 ^\.Rproj\.user$
 ^LICENSE\.md$
 ^\.Rhistory$
+^TODO\.md$
 ^20240422_resample\.RData$
 ^owpl\.Rdata$
 ^selectedDF_exp2\.05_exp3_comparison_0\.05\.csv$

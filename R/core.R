@@ -25,23 +25,31 @@ getMeasures = function(data,
                        measures = list("bam_str", "bam_test", "uam_str", "uam_rank", "prod", "disp")){
 
   message("Some basic operations ...")
+  message("Data views")
+  #Data views
+  data_by_combo_doc = data %>%
+    group_by(!!parse_expr(lemma_names[1]), !!parse_expr(lemma_names[2]), !!parse_expr(doc_id)) %>%
+    count %>%
+    ungroup
+  getMeasuresFromCounts(data_by_combo_doc, lemma_names, slot_names, doc_id, measures)
+}
+
+#getMeasures from counts instead of tokens. data_by_combo_doc has one row per
+#combination per doc: the two lemma columns, the doc_id column and the count n.
+#Returns the same list as getMeasures.
+getMeasuresFromCounts = function(data_by_combo_doc,
+                                 lemma_names = c("lemma_1", "lemma_2"),
+                                 slot_names = c("f", "s"), doc_id = "doc",
+                                 measures = list("bam_str", "bam_test", "uam_str", "uam_rank", "prod", "disp")){
   #Basic info from input
   lemma_1 = lemma_names[1]
   lemma_2 = lemma_names[2]
   slot_1 = slot_names[1]
   slot_2 = slot_names[2]
-  N = nrow(data)
 
-  message("Data views")
-  #Data views
-  data_by_combo = data %>%
-    group_by(!!parse_expr(lemma_names[1]), !!parse_expr(lemma_names[2])) %>%
-    count %>%
-    ungroup
-  data_by_combo_doc = data %>%
-    group_by(!!parse_expr(lemma_names[1]), !!parse_expr(lemma_names[2]), !!parse_expr(doc_id)) %>%
-    count %>%
-    ungroup
+  data_by_combo = data_by_combo_doc %>%
+    group_by(!!parse_expr(lemma_1), !!parse_expr(lemma_2)) %>%
+    summarise(n = sum(n), .groups = "drop")
 
   data_by_combo = data_by_combo %>% mutate(log_f = log(n))
 
@@ -167,10 +175,6 @@ getBAMTest = function(df, slot_1, slot_2, skip.fisher = F){
 
   df = df %>%
     mutate(res_pearson = (.data$n - .data$ef) / sqrt(.data$ef)) %>%
-    # mutate(p_fisher_yates =
-    #          sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE)$p.value))%>%
-    # mutate(p_fisher_yates_attract =
-    #          sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE, alternative = "greater")$p.value)) %>%
     mutate(chisq = .data$res_pearson^2 +
              (!!f_1_not_2 - !!ef_1_not_2)^2 / !!ef_1_not_2 +
              (!!f_2_not_1 - !!ef_2_not_1)^2 / !!ef_2_not_1 +
@@ -184,13 +188,27 @@ getBAMTest = function(df, slot_1, slot_2, skip.fisher = F){
 
   if(!skip.fisher){
     df = df %>%
-      mutate(p_fisher_yates =
-               sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE)$p.value))%>%
-      mutate(p_fisher_yates_attract =
-               sapply(1:nrow(df), function(i) fisher.test(matrix(c(n[i], (!!f_1_not_2)[i], (!!f_2_not_1)[i], (!!f_not_1_or_2)[i]), nrow = 2), simulate.p.value = TRUE, alternative = "greater")$p.value))
+      mutate(p_fisher_yates = getFisherP(.data$n, !!f_1, !!f_2, N),
+             p_fisher_yates_attract = getFisherP(.data$n, !!f_1, !!f_2, N, "greater"))
   }
 
   df
+}
+
+#p-values of Fisher's exact test on the 2x2 table of each combination, as in
+#fisher.test(), without the odds ratio estimate and its CI. a, f_1 and f_2 are
+#vectors of combination and slot frequencies; N is the number of tokens.
+getFisherP = function(a, f_1, f_2, N, alternative = "two.sided"){
+  if(alternative == "greater") return(phyper(a - 1, f_1, N - f_1, f_2, lower.tail = FALSE))
+  vapply(seq_along(a), function(i){
+    lo = max(0, f_2[i] - (N - f_1[i]))
+    hi = min(f_2[i], f_1[i])
+    d = dhyper(lo:hi, f_1[i], N - f_1[i], f_2[i], log = TRUE)
+    d = exp(d - max(d))
+    d = d / sum(d)
+    #Tables at most as likely as the observed one, with fisher.test's tolerance
+    sum(d[d <= d[a[i] - lo + 1] * (1 + 10^(-7))])
+  }, numeric(1))
 }
 
 
@@ -302,19 +320,14 @@ getDPFloor = function(f, perc_docsize){
 }
 
 getDPCeiling = function(f, perc_docsize, abs_docsize){
-  abs_bydoc_currcombo = rep(0, length(perc_docsize))
-  assignedN = 0
-  i = 1
   #This is slightly modified from Gries' method to account for very small docs.
   #We 'fill' the smallest doc first. Once that's filled, we go to the next smallest
   #doc, and so on.
-  while(assignedN < f){
-    smallestDocID = which(rank(perc_docsize, ties.method = "first") == i)
-    toAssign = min(abs_docsize[smallestDocID], f - assignedN)
-    abs_bydoc_currcombo[smallestDocID] = toAssign
-    assignedN = assignedN + toAssign
-    i = i + 1
-  }
+  smallestFirst = order(perc_docsize)
+  sizes = abs_docsize[smallestFirst]
+  filledBefore = c(0, cumsum(sizes)[-length(sizes)])
+  abs_bydoc_currcombo = numeric(length(sizes))
+  abs_bydoc_currcombo[smallestFirst] = pmax(0, pmin(sizes, f - filledBefore))
   perc_bydoc_currcombo = abs_bydoc_currcombo / sum(abs_bydoc_currcombo)
   sum(abs(perc_docsize - perc_bydoc_currcombo)) / 2
 }
@@ -322,6 +335,10 @@ getDPCeiling = function(f, perc_docsize, abs_docsize){
 #Taken directly from Gries (2022)
 zero.to.one = function (x) { (y = x - min(x))/max(y) }
 
+#Unused: the original one-combination-at-a-time version of the dispersion measures,
+#kept as an easier-to-read reference for the vectorised getDispSimple below.
+#sub_df has the rows of df_bydoc for one combination; floor and ceil are its DP
+#floor and ceiling. Returns a one-row tibble with the lemmas and the measures.
 getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id,
                              floor, ceil){
   curr_lemma_1 = pull(sub_df, !!lemma_1)[1]
@@ -387,44 +404,76 @@ getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_
 }
 
 
+#Dispersion measures for every combination at once. Each sum over docs is a sum
+#over the docs where the combination occurs (the rows of df_bydoc), plus a closed
+#form for the docs where it doesn't, so no combination-by-doc matrix is built.
 getDispSimple = function(df, df_bydoc, doc_id, lemma_1, lemma_2){
-  N = sum(df$n)
-
-  docs_list = unique(pull(df_bydoc, !!doc_id))
+  message(">>Starting dispersion calculation...")
+  docs = as.character(pull(df_bydoc, !!doc_id))
+  docs_list = unique(docs)
+  nd = length(docs_list) #no. of docs
+  doc_row = match(docs, docs_list)
+  combo_row = matchCombos(df_bydoc, df, c(deparse(lemma_1), deparse(lemma_2)))
+  #Sum of x over the docs where each combination occurs
+  sumByCombo = function(x) as.vector(rowsum(rep_len(as.numeric(x), length(combo_row)), combo_row))
 
   #Token counts per doc (df_bydoc has one row per combo per doc)
-  df_bydoc_totals = df_bydoc %>%
-    group_by(!!doc_id) %>%
-    summarise(n = sum(n)) %>%
-    ungroup
-
-  message(">>Splitting data frame for dispersion calculation ...")
-  df_bydoc_split = df_bydoc %>%
-    group_split(!!lemma_1, !!lemma_2)
-
-  total_bydoc = df_bydoc_totals$n
-  names(total_bydoc) = pull(df_bydoc_totals, !!doc_id)
+  total_bydoc = as.vector(rowsum(as.numeric(df_bydoc$n), doc_row))
   perc_docsize = total_bydoc / sum(total_bydoc)
-  freq_types = unique(df$n)
-  dpCeils = sapply(freq_types, function(x) getDPCeiling(x, perc_docsize, total_bydoc))
-  dpFloors = sapply(freq_types, function(x) getDPFloor(x, perc_docsize))
 
-  message(">>Starting dispersion calculation...")
-  pb = txtProgressBar(max = length(df_bydoc_split))
-  result = lapply(1:length(df_bydoc_split), function(i){
-    setTxtProgressBar(pb, i)
-    x = df_bydoc_split[[i]]
-    getDispFromDFPart(x, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id,
-                      floor = dpFloors[freq_types == sum(x$n)],
-                      ceil = dpCeils[freq_types == sum(x$n)])
-  }) %>%
-    bind_rows
-  close(pb)
+  v = as.numeric(df_bydoc$n) #Freq of the combo in each doc where it occurs
+  s = perc_docsize[doc_row] #Size of those docs, as proportions
+  f = sumByCombo(v)
+  f_v = f[combo_row]
+  k = sumByCombo(1) #No. of docs where the combo occurs
+  absent = nd - k
+  s_present = sumByCombo(s) #Proportion of the corpus in those docs
 
-#function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_2, doc_id){
+  #Population SDs, adding (0 - mean)^2 for each absent doc
+  mean_count = f / nd
+  sd_count = sqrt((sumByCombo((v - mean_count[combo_row])^2) + absent * mean_count^2) / nd)
+  perc_bydoc_allcombos = v / total_bydoc[doc_row]
+  mean_perc = sumByCombo(perc_bydoc_allcombos) / nd
+  sd_perc = sqrt((sumByCombo((perc_bydoc_allcombos - mean_perc[combo_row])^2) + absent * mean_perc^2) / nd)
+  perc_bydoc_currcombo = v / f_v
 
-  df = df %>% left_join(result, by = c(deparse(lemma_1), deparse(lemma_2)))
-  df
+  range = k / nd
+  var_coef_count = sd_count / mean_count
+  idf = log2(1 / range)
+  var_coef_perc = sd_perc / mean_perc
+  juilland_d = 1 - var_coef_count / sqrt(nd - 1)
+  juilland_d_perc = 1 - var_coef_perc / sqrt(nd - 1)
+  rosengren_s = sumByCombo(sqrt(s * v))^2 / f #Unequal-parts version
+  D2 = (log2(f) - sumByCombo(v * log2(v)) / f) / log2(nd)
+  #An absent doc adds (0 - f * s)^2 / (f * s) = f * s to chisq
+  chisq = sumByCombo((v - f_v * s)^2 / (f_v * s)) + f * (1 - s_present)
+  D3 = 1 - chisq / (4 * f)
+  DC = (sumByCombo(sqrt(v)) / nd)^2 / (f / nd)
+  #An absent doc adds its size to the sum
+  DP = (sumByCombo(abs(s - perc_bydoc_currcombo)) + (1 - s_present)) / 2
+  DP_norm = DP / (1 - min(perc_docsize))
+  kld = sumByCombo(perc_bydoc_currcombo * log2(perc_bydoc_currcombo / s))
+  kld_norm = 1 - exp(-kld)
+
+  #DP rescaled between its floor and ceiling for the combo's frequency
+  freq_types = unique(f)
+  dpCeils = sapply(freq_types, function(x) getDPCeiling(x, perc_docsize, total_bydoc))[match(f, freq_types)]
+  dpFloors = sapply(freq_types, function(x) getDPFloor(x, perc_docsize))[match(f, freq_types)]
+  dp_min = pmin(dpFloors, dpCeils, DP)
+  DP_nofreq = (DP - dp_min) / (pmax(dpFloors, dpCeils, DP) - dp_min)
+
+  #Not mutate(), where columns of df (e.g. chisq) would mask these variables
+  bind_cols(df, tibble(range = range, sd = sd_count, var_coef = var_coef_count,
+                       sd_perc = sd_perc, var_coef_perc = var_coef_perc,
+                       idf = idf,
+                       juilland_d = juilland_d, juilland_d_perc = juilland_d_perc,
+                       juilland_u = juilland_d * f, #Adj. freqs
+                       D2 = D2, Um = f * D2 + (1 - D2) * f / nd, D3 = D3,
+                       rosengren_s = rosengren_s, rosengren_af = rosengren_s * f,
+                       chisq_disp = chisq, DC = DC,
+                       kld_disp = kld, kld_disp_norm = kld_norm,
+                       DP = DP, DP_norm = DP_norm, DP_nofreq = DP_nofreq,
+                       engvall_af = f * range))
 }
 
 

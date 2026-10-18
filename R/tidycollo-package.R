@@ -5,7 +5,7 @@
 #' @import glue
 #' @import rlang
 #' @importFrom data.tree Node Traverse
-#' @importFrom stats fisher.test quantile rmultinom sd
+#' @importFrom stats dhyper phyper pnorm qnorm rmultinom sd
 #' @importFrom utils setTxtProgressBar txtProgressBar
 NULL
 
