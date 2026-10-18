@@ -40,6 +40,12 @@
 #' out is left out of that jackknife sample, and the jackknife uses the
 #' remaining samples.
 #'
+#' With `freq_col`, `data` can be a table of frequencies, which gives the same
+#' results as the tokens it was counted from (under the same seed). With
+#' `keep_zero_rows = TRUE`, a combination listed with frequency 0 in a document
+#' stays in every resample that draws that document, with `n = 0`, instead of
+#' being dropped as unobserved.
+#'
 #' @inheritParams getMeasures
 #' @param R Number of resamples.
 #' @param type Interval types, any of `"perc"`, `"bca"` and `"stud"`. See
@@ -117,13 +123,19 @@ getMeasuresBoot = function(data,
                            R_inner = 50,
                            sampleRatio = 1,
                            retainResamples = F,
-                           parallel = F){
+                           parallel = F,
+                           freq_col = NULL,
+                           keep_zero_rows = FALSE){
   type = match.arg(type, c("perc", "bca", "stud"), several.ok = TRUE)
   inner = match.arg(inner)
   if(length(statistics) > 0 && (is.null(names(statistics)) || any(names(statistics) == ""))){
     stop("All statistics must be named.")
   }
-  docs_list = unique(as.character(data[[doc_id]]))
+  #Resamples are built from the counts by combination and doc, not the tokens.
+  #Counted outside quietly() so that the message on zero rows is shown.
+  counts = getCountsByComboDoc(data, lemma_names, doc_id, freq_col, keep_zero_rows)
+  counts_docs = as.character(counts[[doc_id]])
+  docs_list = unique(counts_docs)
   nDocs = length(docs_list)
   if(nDocs < 2) stop("At least two documents are needed for resampling.")
   nDraw = round(nDocs * sampleRatio)
@@ -131,7 +143,7 @@ getMeasuresBoot = function(data,
   if(sampleRatio != 1) warning("The intervals assume sampleRatio = 1.")
 
   message("Performing on original data ...")
-  orig = quietly(getMeasures(data, lemma_names, slot_names, doc_id, measures))
+  orig = quietly(getMeasuresFromCounts(counts, lemma_names, slot_names, doc_id, measures))
   combos = orig$results %>% select(all_of(lemma_names))
   if(is.null(boot_measures)){
     boot_measures = setdiff(names(orig$results)[sapply(orig$results, is.numeric)], lemma_names)
@@ -139,9 +151,6 @@ getMeasuresBoot = function(data,
     stop(glue("Not in the results of getMeasures: {paste(setdiff(boot_measures, names(orig$results)), collapse = ', ')}"))
   }
 
-  #Resamples are built from the counts by combination and doc, not the tokens
-  counts = orig$counts_by_doc_combo
-  counts_docs = as.character(counts[[doc_id]])
   rows_bydoc = split(seq_len(nrow(counts)), factor(counts_docs, levels = docs_list))
   getReplicate = function(rows, docs_new){
     getReplicateFromCounts(counts, rows, docs_new, combos, lemma_names, slot_names,

@@ -9,11 +9,13 @@ getMeasures(
   lemma_names = c("lemma_1", "lemma_2"),
   slot_names = c("f", "s"),
   doc_id = "doc",
-  measures = list("bam_str", "bam_test", "uam_str", "uam_rank", "prod", "disp")
+  measures = list("bam_str", "bam_test", "uam_str", "uam_rank", "prod", "disp"),
+  freq_col = NULL,
+  keep_zero_rows = FALSE
 )
 }
 \arguments{
-\item{data}{Tidy-formatted data, with one token of a certain combination in each line. It should include at least columns for lemmas of the two slots, plus one for the document in which the combination appears.}
+\item{data}{Tidy-formatted data, with one token of a certain combination in each line. It should include at least columns for lemmas of the two slots, plus one for the document in which the combination appears. With \code{freq_col}, a table of frequencies instead (see \code{freq_col}).}
 
 \item{lemma_names}{Column names for the lemmas of the two slots.}
 
@@ -22,6 +24,10 @@ getMeasures(
 \item{doc_id}{Column name containing documents.}
 
 \item{measures}{A list of abbreviations. See Notes below. If you just want the basic measures of each type (frequency, attraction, productivity, dispersion) and don't plan to use fancier meaures (e.g. based on LNRE models) or composite (e.g. lexical gravity), the default should work fine. #TODO: actually write the list,.}
+
+\item{freq_col}{\code{NULL} (the default) if each row of \code{data} is one token. Otherwise, the name of a column of \code{data} with the frequency of the row's combination in the row's document. The frequencies must be whole numbers, at least 0, with no \code{NA}s. A combination and document may have several rows, which are added up. A combination whose lemma is \code{NA} (e.g. a token with nothing in one slot) needs its own rows, as it would among tokens. For a wide table with one column per document, see \code{\link[=countsFromWide]{countsFromWide()}}. All measures are calculated from these frequencies, so a frequency table gives the same results as the tokens it was counted from.}
+
+\item{keep_zero_rows}{Only used with \code{freq_col}. If \code{FALSE} (the default), rows whose frequency adds up to 0 are dropped, with a message, which gives the same results as tokens. If \code{TRUE}, they are kept: a combination listed only with 0 is in the results with \code{n = 0} (its dispersion measures are \code{NA}), and a document listed only with 0 counts as a document of size 0 in the dispersion measures. Ranks (\code{uam_rank}) are then also among the combinations with 0.}
 }
 \value{
 A list. The first value, results, is usually all you want. You are also provided with several other views of the original data, including a list of combinations with frequencies by document, a term-document matrix, and a contingency table.
@@ -36,4 +42,9 @@ data = dplyr::tibble(doc = c("A", "B", "B", "C", "C", "C"),
 res = getMeasures(data, lemma_names = c("x_lemma", "y_lemma"),
                   slot_names = c("x", "y"), doc_id = "doc")
 res$results
+
+#The same from frequencies
+freqs = dplyr::count(data, doc, x_lemma, y_lemma, name = "freq")
+res = getMeasures(freqs, lemma_names = c("x_lemma", "y_lemma"),
+                  slot_names = c("x", "y"), doc_id = "doc", freq_col = "freq")
 }

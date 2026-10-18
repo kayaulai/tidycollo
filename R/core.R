@@ -3,11 +3,13 @@
 
 #' Get common co-occurrence measures.
 #'
-#' @param data Tidy-formatted data, with one token of a certain combination in each line. It should include at least columns for lemmas of the two slots, plus one for the document in which the combination appears.
+#' @param data Tidy-formatted data, with one token of a certain combination in each line. It should include at least columns for lemmas of the two slots, plus one for the document in which the combination appears. With `freq_col`, a table of frequencies instead (see `freq_col`).
 #' @param lemma_names Column names for the lemmas of the two slots.
 #' @param slot_names Abbreviations for the two slots.
 #' @param doc_id Column name containing documents.
 #' @param measures A list of abbreviations. See Notes below. If you just want the basic measures of each type (frequency, attraction, productivity, dispersion) and don't plan to use fancier meaures (e.g. based on LNRE models) or composite (e.g. lexical gravity), the default should work fine. #TODO: actually write the list,.
+#' @param freq_col `NULL` (the default) if each row of `data` is one token. Otherwise, the name of a column of `data` with the frequency of the row's combination in the row's document. The frequencies must be whole numbers, at least 0, with no `NA`s. A combination and document may have several rows, which are added up. A combination whose lemma is `NA` (e.g. a token with nothing in one slot) needs its own rows, as it would among tokens. For a wide table with one column per document, see [countsFromWide()]. All measures are calculated from these frequencies, so a frequency table gives the same results as the tokens it was counted from.
+#' @param keep_zero_rows Only used with `freq_col`. If `FALSE` (the default), rows whose frequency adds up to 0 are dropped, with a message, which gives the same results as tokens. If `TRUE`, they are kept: a combination listed only with 0 is in the results with `n = 0` (its dispersion measures are `NA`), and a document listed only with 0 counts as a document of size 0 in the dispersion measures. Ranks (`uam_rank`) are then also among the combinations with 0.
 #'
 #' @return A list. The first value, results, is usually all you want. You are also provided with several other views of the original data, including a list of combinations with frequencies by document, a term-document matrix, and a contingency table.
 #' @export
@@ -19,19 +21,76 @@
 #' res = getMeasures(data, lemma_names = c("x_lemma", "y_lemma"),
 #'                   slot_names = c("x", "y"), doc_id = "doc")
 #' res$results
+#'
+#' #The same from frequencies
+#' freqs = dplyr::count(data, doc, x_lemma, y_lemma, name = "freq")
+#' res = getMeasures(freqs, lemma_names = c("x_lemma", "y_lemma"),
+#'                   slot_names = c("x", "y"), doc_id = "doc", freq_col = "freq")
 getMeasures = function(data,
                        lemma_names = c("lemma_1", "lemma_2"),
                        slot_names = c("f", "s"), doc_id = "doc",
-                       measures = list("bam_str", "bam_test", "uam_str", "uam_rank", "prod", "disp")){
+                       measures = list("bam_str", "bam_test", "uam_str", "uam_rank", "prod", "disp"),
+                       freq_col = NULL, keep_zero_rows = FALSE){
 
   message("Some basic operations ...")
   message("Data views")
   #Data views
-  data_by_combo_doc = data %>%
-    group_by(!!parse_expr(lemma_names[1]), !!parse_expr(lemma_names[2]), !!parse_expr(doc_id)) %>%
-    count %>%
-    ungroup
+  data_by_combo_doc = getCountsByComboDoc(data, lemma_names, doc_id, freq_col, keep_zero_rows)
   getMeasuresFromCounts(data_by_combo_doc, lemma_names, slot_names, doc_id, measures)
+}
+
+#Counts by combination and doc: one row per combination per doc, with the two
+#lemma columns, the doc_id column and the count n. From tokens if freq_col is
+#NULL, otherwise by adding up freq_col (see getMeasures).
+getCountsByComboDoc = function(data, lemma_names, doc_id, freq_col = NULL, keep_zero_rows = FALSE){
+  groups = syms(c(lemma_names, doc_id))
+  if(is.null(freq_col)){
+    return(data %>% group_by(!!!groups) %>% count %>% ungroup)
+  }
+  if(!freq_col %in% names(data)) stop(glue("Column {freq_col} is not in data."))
+  freq = data[[freq_col]]
+  if(!is.numeric(freq) || anyNA(freq) || any(freq < 0) || any(abs(freq - round(freq)) > 1e-8)){
+    stop(glue("Column {freq_col} must hold whole numbers, at least 0, with no NAs."))
+  }
+  counts = data %>%
+    group_by(!!!groups) %>%
+    summarise(n = sum(!!sym(freq_col)), .groups = "drop")
+  zero = counts$n == 0
+  if(any(zero) && !keep_zero_rows){
+    message(glue("Dropped {sum(zero)} combination-document rows with frequency 0. ",
+                 "Use keep_zero_rows = TRUE to keep them."))
+    counts = counts[!zero, ]
+  }
+  counts
+}
+
+#' Convert a wide table of frequencies to long.
+#'
+#' Turns a table with one row per combination and one column per document
+#' into one row per combination per document, for `getMeasures(freq_col = ...)`.
+#'
+#' @param data A data frame with the two lemma columns, and one column of
+#'   frequencies for each document, named by document. Every other column is
+#'   taken as a document.
+#' @param lemma_names Column names for the lemmas of the two slots.
+#' @param doc_id Name of the document column to create.
+#' @param freq_col Name of the frequency column to create.
+#'
+#' @return A tibble with `nrow(data) × (number of documents)` rows and the
+#'   columns `lemma_names`, `doc_id` and `freq_col`. Rows with frequency 0 are
+#'   kept; [getMeasures()] drops them unless `keep_zero_rows = TRUE`.
+#' @export
+#'
+#' @examples
+#' wide = dplyr::tibble(x_lemma = c("p", "q"), y_lemma = c("z", "z"),
+#'                      A = c(1, 0), B = c(2, 3))
+#' countsFromWide(wide, c("x_lemma", "y_lemma"))
+countsFromWide = function(data, lemma_names = c("lemma_1", "lemma_2"), doc_id = "doc", freq_col = "freq"){
+  doc_cols = setdiff(names(data), lemma_names)
+  long = as_tibble(data)[rep(seq_len(nrow(data)), length(doc_cols)), lemma_names]
+  long[[doc_id]] = rep(doc_cols, each = nrow(data))
+  long[[freq_col]] = unlist(lapply(doc_cols, function(col) data[[col]]), use.names = FALSE)
+  long
 }
 
 #getMeasures from counts instead of tokens. data_by_combo_doc has one row per
@@ -267,13 +326,16 @@ getUAMRank = function(df, lemma_1, lemma_2, slot_1, slot_2, stats = c("chisq", "
 
 
 
+#Zero counts (kept with keep_zero_rows) are left out, taking 0 * log(0) = 0
 getEntropyFromCounts = function(counts){
-  p = counts / sum(counts)
+  if(sum(counts) == 0) return(NA_real_)
+  p = counts[counts > 0] / sum(counts)
   -sum(p * log2(p))
 }
 
 getNormEntropyFromCounts = function(counts){
-  p = counts / sum(counts)
+  if(sum(counts) == 0) return(NA_real_)
+  p = counts[counts > 0] / sum(counts)
   -sum(p * log2(p)) / log2(sum(counts))
 }
 
@@ -284,15 +346,15 @@ getProdSimple = function(df, lemma_1, lemma_2, slot_1, slot_2){
     group_by(!!lemma_1) %>%
     mutate("h_{slot_1}_cond_{slot_2}" := getEntropyFromCounts(n),
            "h_{slot_1}_cond_{slot_2}_norm" := getNormEntropyFromCounts(n),
-           "tf_{slot_1}" := length(unique(!!lemma_2)),
-           "log_tf_{slot_1}" := log2(length(unique(!!lemma_2))),
+           "tf_{slot_1}" := n_distinct((!!lemma_2)[n > 0]), #Attested types only
+           "log_tf_{slot_1}" := log2(n_distinct((!!lemma_2)[n > 0])),
            "p_hapax_cond_{slot_1}" := sum(n == 1)/ sum(n)) %>% #Baayen's P
     ungroup() %>%
     group_by(!!lemma_2) %>%
     mutate("h_{slot_2}_cond_{slot_1}" := getEntropyFromCounts(n),
            "h_{slot_2}_cond_{slot_1}_norm" := getNormEntropyFromCounts(n),
-           "tf_{slot_2}" := length(unique(!!lemma_1)),
-           "log_tf_{slot_2}" := log2(length(unique(!!lemma_1))),
+           "tf_{slot_2}" := n_distinct((!!lemma_1)[n > 0]),
+           "log_tf_{slot_2}" := log2(n_distinct((!!lemma_1)[n > 0])),
            "p_hapax_cond_{slot_2}" := sum(n == 1)/ sum(n)) %>% #Baayen's P
     ungroup()
 
@@ -409,19 +471,26 @@ getDispFromDFPart = function(sub_df, df_bydoc_totals, docs_list, lemma_1, lemma_
 #form for the docs where it doesn't, so no combination-by-doc matrix is built.
 getDispSimple = function(df, df_bydoc, doc_id, lemma_1, lemma_2){
   message(">>Starting dispersion calculation...")
+  #Docs listed only with frequency 0 (keep_zero_rows) count as docs of size 0
   docs = as.character(pull(df_bydoc, !!doc_id))
   docs_list = unique(docs)
   nd = length(docs_list) #no. of docs
-  doc_row = match(docs, docs_list)
-  combo_row = matchCombos(df_bydoc, df, c(deparse(lemma_1), deparse(lemma_2)))
-  #Sum of x over the docs where each combination occurs
-  sumByCombo = function(x) as.vector(rowsum(rep_len(as.numeric(x), length(combo_row)), combo_row))
-
   #Token counts per doc (df_bydoc has one row per combo per doc)
-  total_bydoc = as.vector(rowsum(as.numeric(df_bydoc$n), doc_row))
+  total_bydoc = as.vector(rowsum(as.numeric(df_bydoc$n), match(docs, docs_list)))
   perc_docsize = total_bydoc / sum(total_bydoc)
 
-  v = as.numeric(df_bydoc$n) #Freq of the combo in each doc where it occurs
+  occurs = df_bydoc$n > 0
+  doc_row = match(docs[occurs], docs_list)
+  combo_row = matchCombos(df_bydoc[occurs, ], df, c(deparse(lemma_1), deparse(lemma_2)))
+  #Sum of x over the docs where each combination occurs (0 if it occurs nowhere)
+  sumByCombo = function(x){
+    sums = rowsum(rep_len(as.numeric(x), length(combo_row)), combo_row)
+    out = numeric(nrow(df))
+    out[as.integer(rownames(sums))] = sums
+    out
+  }
+
+  v = as.numeric(df_bydoc$n[occurs]) #Freq of the combo in each doc where it occurs
   s = perc_docsize[doc_row] #Size of those docs, as proportions
   f = sumByCombo(v)
   f_v = f[combo_row]
@@ -463,17 +532,20 @@ getDispSimple = function(df, df_bydoc, doc_id, lemma_1, lemma_2){
   DP_nofreq = (DP - dp_min) / (pmax(dpFloors, dpCeils, DP) - dp_min)
 
   #Not mutate(), where columns of df (e.g. chisq) would mask these variables
-  bind_cols(df, tibble(range = range, sd = sd_count, var_coef = var_coef_count,
-                       sd_perc = sd_perc, var_coef_perc = var_coef_perc,
-                       idf = idf,
-                       juilland_d = juilland_d, juilland_d_perc = juilland_d_perc,
-                       juilland_u = juilland_d * f, #Adj. freqs
-                       D2 = D2, Um = f * D2 + (1 - D2) * f / nd, D3 = D3,
-                       rosengren_s = rosengren_s, rosengren_af = rosengren_s * f,
-                       chisq_disp = chisq, DC = DC,
-                       kld_disp = kld, kld_disp_norm = kld_norm,
-                       DP = DP, DP_norm = DP_norm, DP_nofreq = DP_nofreq,
-                       engvall_af = f * range))
+  disp = tibble(range = range, sd = sd_count, var_coef = var_coef_count,
+                sd_perc = sd_perc, var_coef_perc = var_coef_perc,
+                idf = idf,
+                juilland_d = juilland_d, juilland_d_perc = juilland_d_perc,
+                juilland_u = juilland_d * f, #Adj. freqs
+                D2 = D2, Um = f * D2 + (1 - D2) * f / nd, D3 = D3,
+                rosengren_s = rosengren_s, rosengren_af = rosengren_s * f,
+                chisq_disp = chisq, DC = DC,
+                kld_disp = kld, kld_disp_norm = kld_norm,
+                DP = DP, DP_norm = DP_norm, DP_nofreq = DP_nofreq,
+                engvall_af = f * range)
+  #Dispersion is undefined for combos listed only with frequency 0 (keep_zero_rows)
+  disp[f == 0, ] = NA
+  bind_cols(df, disp)
 }
 
 

@@ -20,11 +20,13 @@ getMeasuresBoot(
   R_inner = 50,
   sampleRatio = 1,
   retainResamples = F,
-  parallel = F
+  parallel = F,
+  freq_col = NULL,
+  keep_zero_rows = FALSE
 )
 }
 \arguments{
-\item{data}{Tidy-formatted data, with one token of a certain combination in each line. It should include at least columns for lemmas of the two slots, plus one for the document in which the combination appears.}
+\item{data}{Tidy-formatted data, with one token of a certain combination in each line. It should include at least columns for lemmas of the two slots, plus one for the document in which the combination appears. With \code{freq_col}, a table of frequencies instead (see \code{freq_col}).}
 
 \item{lemma_names}{Column names for the lemmas of the two slots.}
 
@@ -68,6 +70,10 @@ replicates. They are needed by \code{\link[=getBootIntervals]{getBootIntervals()
 worker also runs the inner loop of its resamples. All documents are drawn
 beforehand, so results are the same as with \code{parallel = FALSE} under the
 same seed.}
+
+\item{freq_col}{\code{NULL} (the default) if each row of \code{data} is one token. Otherwise, the name of a column of \code{data} with the frequency of the row's combination in the row's document. The frequencies must be whole numbers, at least 0, with no \code{NA}s. A combination and document may have several rows, which are added up. A combination whose lemma is \code{NA} (e.g. a token with nothing in one slot) needs its own rows, as it would among tokens. For a wide table with one column per document, see \code{\link[=countsFromWide]{countsFromWide()}}. All measures are calculated from these frequencies, so a frequency table gives the same results as the tokens it was counted from.}
+
+\item{keep_zero_rows}{Only used with \code{freq_col}. If \code{FALSE} (the default), rows whose frequency adds up to 0 are dropped, with a message, which gives the same results as tokens. If \code{TRUE}, they are kept: a combination listed only with 0 is in the results with \code{n = 0} (its dispersion measures are \code{NA}), and a document listed only with 0 counts as a document of size 0 in the dispersion measures. Ranks (\code{uam_rank}) are then also among the combinations with 0.}
 }
 \value{
 A list:
@@ -137,6 +143,12 @@ discrete measures.
 In both jackknifes, a combination that disappears when a document is left
 out is left out of that jackknife sample, and the jackknife uses the
 remaining samples.
+
+With \code{freq_col}, \code{data} can be a table of frequencies, which gives the same
+results as the tokens it was counted from (under the same seed). With
+\code{keep_zero_rows = TRUE}, a combination listed with frequency 0 in a document
+stays in every resample that draws that document, with \code{n = 0}, instead of
+being dropped as unobserved.
 }
 \examples{
 data = dplyr::tibble(doc = rep(c("A", "B", "C", "D"), each = 4),
